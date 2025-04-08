@@ -1,8 +1,6 @@
 import os
 import sys
-from flask import Flask, request, render_template, jsonify, session
-from werkzeug.security import generate_password_hash, check_password_hash
-from functools import wraps
+from flask import Flask, request, render_template, jsonify
 
 # Import our custom modules
 from distro_detector import get_distro_info
@@ -11,7 +9,6 @@ from ollama_interface import interpret_command
 from user_info import get_user_info
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # Set a secret key for sessions
 
 # Get distribution and user info at startup
 DISTRO_INFO = get_distro_info()
@@ -20,39 +17,11 @@ USER_INFO = get_user_info()
 print(f"Detected system distribution:\n{DISTRO_INFO}")
 print(f"User information:\n{USER_INFO}")
 
-# Simulated user database (replace with a real database in production)
-users = {
-    "admin": generate_password_hash("adminpassword")
-}
-
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'username' not in session:
-            return jsonify({"error": "Authentication required"}), 401
-        return f(*args, **kwargs)
-    return decorated_function
-
-@app.route('/login', methods=['POST'])
-def login():
-    username = request.json.get('username')
-    password = request.json.get('password')
-    if username in users and check_password_hash(users[username], password):
-        session['username'] = username
-        return jsonify({"message": "Login successful"})
-    return jsonify({"error": "Invalid credentials"}), 401
-
-@app.route('/logout')
-def logout():
-    session.pop('username', None)
-    return jsonify({"message": "Logged out successfully"})
-
 @app.route('/')
 def index():
     return render_template('index.html')
 
 @app.route('/execute', methods=['POST'])
-@login_required
 def execute():
     user_input = request.json.get('command', '')
     
@@ -119,3 +88,4 @@ if __name__ == '__main__':
     else:
         print("Starting web interface on http://127.0.0.1:5000")
         app.run(debug=True)
+
