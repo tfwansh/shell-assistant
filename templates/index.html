@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Command Assistant</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .input-area { margin-bottom: 20px; }
+        #command-input { width: 80%; padding: 8px; }
+        button { padding: 8px 15px; }
+        .result-area { border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
+        .command { background-color: #f5f5f5; padding: 10px; border-radius: 3px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Command Assistant</h1>
+    <div class="input-area">
+        <input type="text" id="command-input" placeholder="Enter your command in natural language...">
+        <button onclick="executeCommand()">Execute</button>
+    </div>
+    <div class="result-area">
+        <h3>Interpreted Command:</h3>
+        <div id="interpreted-command" class="command"></div>
+        <h3>Result:</h3>
+        <pre id="command-result"></pre>
+    </div>
+
+    <script>
+        function executeCommand() {
+            const userInput = document.getElementById('command-input').value;
+            
+            fetch('/execute', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({command: userInput}),
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('interpreted-command').textContent = data.interpreted_command;
+                
+                let resultText = '';
+                if (typeof data.result === 'object') {
+                    resultText = data.result.stdout || '';
+                    if (data.result.stderr) {
+                        resultText += '\nErrors:\n' + data.result.stderr;
+                    }
+                } else {
+                    resultText = data.result;
+                }
+                
+                document.getElementById('command-result').textContent = resultText;
+            });
+        }
+    </script>
+</body>
+</html>
