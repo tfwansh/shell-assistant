@@ -3,30 +3,206 @@
 <head>
     <title>Command Assistant</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        .input-area { margin-bottom: 20px; }
-        #command-input { width: 80%; padding: 8px; }
-        button { padding: 8px 15px; }
-        .result-area { border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
-        .command { background-color: #f5f5f5; padding: 10px; border-radius: 3px; margin-bottom: 10px; }
+        :root {
+            /* Nord color palette */
+            --nord0: #2E3440;
+            --nord1: #3B4252;
+            --nord2: #434C5E;
+            --nord3: #4C566A;
+            --nord4: #D8DEE9;
+            --nord5: #E5E9F0;
+            --nord6: #ECEFF4;
+            --nord7: #8FBCBB;
+            --nord8: #88C0D0;
+            --nord9: #81A1C1;
+            --nord10: #5E81AC;
+            --nord11: #BF616A;
+            --nord12: #D08770;
+            --nord13: #EBCB8B;
+            --nord14: #A3BE8C;
+            --nord15: #B48EAD;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--nord0);
+            color: var(--nord4);
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        h1 {
+            color: var(--nord8);
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background-color: var(--nord1);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        input {
+            background-color: var(--nord2);
+            border: none;
+            border-radius: 8px;
+            padding: 12px 15px;
+            color: var(--nord6);
+            flex-grow: 1;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+
+        input:focus {
+            outline: none;
+            background-color: var(--nord3);
+            box-shadow: 0 0 0 2px var(--nord8);
+        }
+
+        input::placeholder {
+            color: var(--nord4);
+            opacity: 0.6;
+        }
+
+        button {
+            background-color: var(--nord10);
+            color: var(--nord6);
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: var(--nord9);
+        }
+
+        button.secondary {
+            background-color: var(--nord3);
+        }
+
+        button.secondary:hover {
+            background-color: var(--nord2);
+        }
+
+        .result-area {
+            margin-top: 20px;
+        }
+
+        .section {
+            margin-bottom: 15px;
+        }
+
+        .section-title {
+            color: var(--nord8);
+            font-size: 16px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .command {
+            background-color: var(--nord2);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-family: 'Courier New', monospace;
+            color: var(--nord14);
+        }
+
+        pre {
+            background-color: var(--nord2);
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            color: var(--nord4);
+            font-family: 'Courier New', monospace;
+        }
+
+        .notes {
+            background-color: var(--nord2);
+            padding: 12px;
+            border-radius: 8px;
+            color: var(--nord13);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 15px;
+        }
     </style>
 </head>
 <body>
     <h1>Command Assistant</h1>
-    <div class="input-area">
-        <input type="text" id="command-input" placeholder="Enter your command in natural language...">
-        <button onclick="executeCommand()">Execute</button>
+
+    <div class="card">
+        <div class="section-title">Enter your command</div>
+        <div class="input-area">
+            <input type="text" id="command-input" placeholder="Enter your command in natural language...">
+            <button onclick="interpretCommand()">Execute</button>
+        </div>
     </div>
-    <div class="result-area">
-        <h3>Interpreted Command:</h3>
-        <div id="interpreted-command" class="command"></div>
-        <h3>Result:</h3>
-        <pre id="command-result"></pre>
+
+    <div id="confirmation-dialog" class="hidden card">
+        <div class="section-title">Confirm Command Execution</div>
+        <p>Do you want to execute this command?</p>
+        <div id="confirm-command" class="command"></div>
+        <div class="button-group">
+            <button onclick="confirmExecution(true)">Yes</button>
+            <button class="secondary" onclick="confirmExecution(false)">No</button>
+        </div>
+    </div>
+
+    <div id="result-container" class="card hidden">
+        <div class="section">
+            <div class="section-title">Interpreted Command</div>
+            <div id="interpreted-command" class="command"></div>
+        </div>
+
+        <div class="section" id="notes-section">
+            <div class="section-title">Notes</div>
+            <div id="command-notes" class="notes"></div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Result</div>
+            <pre id="command-result"></pre>
+        </div>
     </div>
 
     <script>
-        function executeCommand() {
+        function interpretCommand() {
             const userInput = document.getElementById('command-input').value;
+            
+            if (!userInput) {
+                alert("Please enter a command");
+                return;
+            }
             
             fetch('/execute', {
                 method: 'POST',
@@ -35,23 +211,66 @@
                 },
                 body: JSON.stringify({command: userInput}),
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Error executing command');
+                }
+                return response.json();
+            })
             .then(data => {
-                document.getElementById('interpreted-command').textContent = data.interpreted_command;
+                // Store the command and result for confirmation
+                window.pendingCommand = data.interpreted_command;
+                window.pendingResult = data.result;
+                window.pendingNotes = data.notes;
+                
+                // Show confirmation dialog
+                document.getElementById('confirm-command').textContent = data.interpreted_command;
+                document.getElementById('confirmation-dialog').classList.remove('hidden');
+                document.getElementById('result-container').classList.add('hidden');
+            })
+            .catch(error => {
+                alert(error.message);
+            });
+        }
+
+        function confirmExecution(confirmed) {
+            // Hide confirmation dialog
+            document.getElementById('confirmation-dialog').classList.add('hidden');
+            
+            if (confirmed && window.pendingCommand) {
+                // Show the results
+                document.getElementById('result-container').classList.remove('hidden');
+                document.getElementById('interpreted-command').textContent = window.pendingCommand;
+                
+                // Handle notes section
+                if (window.pendingNotes && window.pendingNotes.trim()) {
+                    document.getElementById('notes-section').classList.remove('hidden');
+                    document.getElementById('command-notes').textContent = window.pendingNotes;
+                } else {
+                    document.getElementById('notes-section').classList.add('hidden');
+                }
                 
                 let resultText = '';
-                if (typeof data.result === 'object') {
-                    resultText = data.result.stdout || '';
-                    if (data.result.stderr) {
-                        resultText += '\nErrors:\n' + data.result.stderr;
+                if (typeof window.pendingResult === 'object') {
+                    resultText = window.pendingResult.stdout || '';
+                    if (window.pendingResult.stderr) {
+                        resultText += '\nErrors:\n' + window.pendingResult.stderr;
                     }
                 } else {
-                    resultText = data.result;
+                    resultText = window.pendingResult;
                 }
                 
                 document.getElementById('command-result').textContent = resultText;
-            });
+            }
         }
+
+        // Add event listener for Enter key in command input
+        document.getElementById('command-input').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                interpretCommand();
+            }
+        });
     </script>
 </body>
 </html>
+
