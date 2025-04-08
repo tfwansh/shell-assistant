@@ -37,6 +37,7 @@
             color: var(--nord8);
             text-align: center;
             margin-bottom: 30px;
+            animation: fadeIn 1.5s ease-in-out;
         }
 
         .card {
@@ -46,6 +47,7 @@
             margin-bottom: 20px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             transition: transform 0.2s, box-shadow 0.2s;
+            animation: slideIn 0.5s ease-out;
         }
 
         .card:hover {
@@ -155,20 +157,109 @@
             justify-content: flex-end;
             margin-top: 15px;
         }
+
+        /* Loading animation */
+        .loader-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(46, 52, 64, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .loader-container.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .loader {
+            border: 5px solid var(--nord3);
+            border-top: 5px solid var(--nord8);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 2s linear infinite;
+        }
+
+        .loader-text {
+            position: absolute;
+            margin-top: 80px;
+            color: var(--nord8);
+            font-weight: 500;
+        }
+
+        /* Animations */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes fadeIn {
+            0% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+
+        @keyframes slideIn {
+            0% { transform: translateY(20px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+
+        @keyframes typewriter {
+            from { width: 0; }
+            to { width: 100%; }
+        }
+
+        .typing-animation {
+            overflow: hidden;
+            white-space: nowrap;
+            border-right: 2px solid var(--nord8);
+            animation: 
+                typewriter 2s steps(40, end),
+                blink-caret 0.75s step-end infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes blink-caret {
+            from, to { border-color: transparent; }
+            50% { border-color: var(--nord8); }
+        }
+
+        .bounce-in {
+            animation: bounceIn 0.6s ease-out;
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            70% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .fade-in-sequence > * {
+            opacity: 0;
+            animation: fadeIn 0.5s ease-out forwards;
+        }
     </style>
 </head>
 <body>
     <h1>Command Assistant</h1>
 
     <div class="card">
-        <div class="section-title">Enter your command</div>
+        <div class="section-title typing-animation">Enter your command</div>
         <div class="input-area">
             <input type="text" id="command-input" placeholder="Enter your command in natural language...">
             <button onclick="interpretCommand()">Execute</button>
         </div>
     </div>
 
-    <div id="confirmation-dialog" class="hidden card">
+    <div id="confirmation-dialog" class="hidden card bounce-in">
         <div class="section-title">Confirm Command Execution</div>
         <p>Do you want to execute this command?</p>
         <div id="confirm-command" class="command"></div>
@@ -179,23 +270,65 @@
     </div>
 
     <div id="result-container" class="card hidden">
-        <div class="section">
+        <div class="section fade-in-sequence">
             <div class="section-title">Interpreted Command</div>
             <div id="interpreted-command" class="command"></div>
         </div>
 
-        <div class="section" id="notes-section">
+        <div class="section fade-in-sequence" id="notes-section">
             <div class="section-title">Notes</div>
             <div id="command-notes" class="notes"></div>
         </div>
 
-        <div class="section">
+        <div class="section fade-in-sequence">
             <div class="section-title">Result</div>
             <pre id="command-result"></pre>
         </div>
     </div>
 
+    <!-- Loading animation -->
+    <div class="loader-container" id="loader">
+        <div class="loader"></div>
+        <div class="loader-text" id="loader-text">Processing command...</div>
+    </div>
+
     <script>
+        // Show animated elements sequentially
+        function animateElementsSequentially(parentSelector) {
+            const elements = document.querySelectorAll(`${parentSelector} > *`);
+            elements.forEach((el, index) => {
+                el.style.animationDelay = `${index * 0.15}s`;
+            });
+        }
+
+        // Initialize animations
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add typewriter effect to placeholders
+            const input = document.getElementById('command-input');
+            const originalPlaceholder = input.placeholder;
+            input.placeholder = "";
+            
+            let i = 0;
+            const typeWriter = () => {
+                if (i < originalPlaceholder.length) {
+                    input.placeholder += originalPlaceholder.charAt(i);
+                    i++;
+                    setTimeout(typeWriter, 50);
+                }
+            };
+            
+            setTimeout(typeWriter, 1000);
+        });
+
+        function showLoader(message = "Processing command...") {
+            document.getElementById('loader-text').textContent = message;
+            document.getElementById('loader').classList.add('active');
+        }
+
+        function hideLoader() {
+            document.getElementById('loader').classList.remove('active');
+        }
+
         function interpretCommand() {
             const userInput = document.getElementById('command-input').value;
             
@@ -203,6 +336,8 @@
                 alert("Please enter a command");
                 return;
             }
+            
+            showLoader("Interpreting your command...");
             
             fetch('/execute', {
                 method: 'POST',
@@ -218,17 +353,20 @@
                 return response.json();
             })
             .then(data => {
+                hideLoader();
+                
                 // Store the command and result for confirmation
                 window.pendingCommand = data.interpreted_command;
                 window.pendingResult = data.result;
                 window.pendingNotes = data.notes;
                 
-                // Show confirmation dialog
+                // Show confirmation dialog with animation
                 document.getElementById('confirm-command').textContent = data.interpreted_command;
                 document.getElementById('confirmation-dialog').classList.remove('hidden');
                 document.getElementById('result-container').classList.add('hidden');
             })
             .catch(error => {
+                hideLoader();
                 alert(error.message);
             });
         }
@@ -238,29 +376,62 @@
             document.getElementById('confirmation-dialog').classList.add('hidden');
             
             if (confirmed && window.pendingCommand) {
-                // Show the results
-                document.getElementById('result-container').classList.remove('hidden');
-                document.getElementById('interpreted-command').textContent = window.pendingCommand;
+                showLoader("Executing command...");
                 
-                // Handle notes section
-                if (window.pendingNotes && window.pendingNotes.trim()) {
-                    document.getElementById('notes-section').classList.remove('hidden');
-                    document.getElementById('command-notes').textContent = window.pendingNotes;
-                } else {
-                    document.getElementById('notes-section').classList.add('hidden');
-                }
-                
-                let resultText = '';
-                if (typeof window.pendingResult === 'object') {
-                    resultText = window.pendingResult.stdout || '';
-                    if (window.pendingResult.stderr) {
-                        resultText += '\nErrors:\n' + window.pendingResult.stderr;
+                setTimeout(() => {
+                    hideLoader();
+                    
+                    // Show the results with animations
+                    document.getElementById('result-container').classList.remove('hidden');
+                    document.getElementById('interpreted-command').textContent = window.pendingCommand;
+                    
+                    // Handle notes section
+                    if (window.pendingNotes && window.pendingNotes.trim()) {
+                        document.getElementById('notes-section').classList.remove('hidden');
+                        document.getElementById('command-notes').textContent = window.pendingNotes;
+                    } else {
+                        document.getElementById('notes-section').classList.add('hidden');
                     }
-                } else {
-                    resultText = window.pendingResult;
-                }
-                
-                document.getElementById('command-result').textContent = resultText;
+                    
+                    let resultText = '';
+                    if (typeof window.pendingResult === 'object') {
+                        resultText = window.pendingResult.stdout || '';
+                        if (window.pendingResult.stderr) {
+                            resultText += '\nErrors:\n' + window.pendingResult.stderr;
+                        }
+                    } else {
+                        resultText = window.pendingResult;
+                    }
+                    
+                    // Animate the result text character by character
+                    const resultElement = document.getElementById('command-result');
+                    resultElement.textContent = '';
+                    
+                    // Animate elements sequentially
+                    animateElementsSequentially('#result-container .fade-in-sequence');
+                    
+                    // Type out the result text
+                    if (resultText.length > 500) {
+                        // For long results, just show it all at once with fade in
+                        resultElement.textContent = resultText;
+                        resultElement.style.opacity = 0;
+                        setTimeout(() => {
+                            resultElement.style.opacity = 1;
+                            resultElement.style.transition = 'opacity 0.5s';
+                        }, 100);
+                    } else {
+                        // For shorter results, type it out
+                        let i = 0;
+                        const typeResult = () => {
+                            if (i < resultText.length) {
+                                resultElement.textContent += resultText.charAt(i);
+                                i++;
+                                setTimeout(typeResult, 10);
+                            }
+                        };
+                        setTimeout(typeResult, 500);
+                    }
+                }, 800);
             }
         }
 
