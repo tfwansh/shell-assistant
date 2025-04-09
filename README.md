@@ -26,13 +26,13 @@ The application runs locally and interacts with a locally running Ollama model t
 ```
 ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
 │  Web Interface│     │  Flask Server │     │ Ollama Model  │
-│   (Browser)   │────▶│  (Python)     │────▶│  (Local LLM)  │
+│   (Browser)   │───▶│  (Python)     │───▶│  (Local LLM)  │
 └───────────────┘     └───────────────┘     └───────────────┘
                              │                      │
                              ▼                      ▼
                       ┌───────────────┐     ┌───────────────┐
                       │ Command       │     │ Command       │
-                      │ Validation    │◀────│ Generation    │
+                      │ Validation    │◀───│ Generation    │
                       └───────────────┘     └───────────────┘
                              │
                              ▼
