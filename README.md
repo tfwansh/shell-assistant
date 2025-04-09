@@ -19,7 +19,7 @@ The application runs locally and interacts with a locally running Ollama model t
 - Safety checks to prevent dangerous operations
 - Distribution-aware command generation
 - User-specific folder awareness
-- Modern Nord-themed UI
+- Modern Catpuccin-themed UI
 
 ## Architecture
 
