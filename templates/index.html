@@ -41,6 +41,28 @@
             margin: 0 auto;
             padding: 20px;
             line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+                max-width: 100%;
+            }
+            
+            .input-area {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .button-group {
+                flex-direction: column;
+            }
+            
+            .card {
+                padding: 15px;
+            }
         }
 
         h1 {
@@ -158,6 +180,24 @@
             color: var(--ctp-mocha-peach);
         }
 
+        .error {
+            background-color: var(--ctp-mocha-surface1);
+            border-left: 4px solid var(--ctp-mocha-red);
+            padding: 12px;
+            border-radius: 8px;
+            color: var(--ctp-mocha-red);
+            margin-bottom: 15px;
+        }
+
+        .success {
+            background-color: var(--ctp-mocha-surface1);
+            border-left: 4px solid var(--ctp-mocha-green);
+            padding: 12px;
+            border-radius: 8px;
+            color: var(--ctp-mocha-green);
+            margin-bottom: 15px;
+        }
+
         .hidden {
             display: none;
         }
@@ -248,6 +288,7 @@
             <input type="text" id="command-input" placeholder="Enter your command in natural language...">
             <button onclick="interpretCommand()">Execute</button>
         </div>
+        <div id="status-message"></div>
     </div>
 
     <div id="confirmation-dialog" class="hidden card bounce-in">
@@ -294,21 +335,50 @@
 
         // Initialize animations
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM loaded, initializing...');
+            
             // Add typewriter effect to placeholders
             const input = document.getElementById('command-input');
-            const originalPlaceholder = input.placeholder;
-            input.placeholder = "";
+            if (input) {
+                const originalPlaceholder = input.placeholder;
+                input.placeholder = "";
+                
+                let i = 0;
+                const typeWriter = () => {
+                    if (i < originalPlaceholder.length) {
+                        input.placeholder += originalPlaceholder.charAt(i);
+                        i++;
+                        setTimeout(typeWriter, 50);
+                    }
+                };
+                
+                setTimeout(typeWriter, 1000);
+            } else {
+                console.error('Command input element not found');
+            }
             
-            let i = 0;
-            const typeWriter = () => {
-                if (i < originalPlaceholder.length) {
-                    input.placeholder += originalPlaceholder.charAt(i);
-                    i++;
-                    setTimeout(typeWriter, 50);
+            // Test if all required elements exist
+            const requiredElements = [
+                'command-input',
+                'confirmation-dialog',
+                'result-container',
+                'confirm-command',
+                'interpreted-command',
+                'command-notes',
+                'command-result',
+                'notes-section',
+                'status-message',
+                'loader'
+            ];
+            
+            requiredElements.forEach(id => {
+                const element = document.getElementById(id);
+                if (!element) {
+                    console.error(`Required element with id '${id}' not found`);
+                } else {
+                    console.log(`✓ Element '${id}' found`);
                 }
-            };
-            
-            setTimeout(typeWriter, 1000);
+            });
         });
 
         function showLoader(message = "Processing command...") {
@@ -320,17 +390,35 @@
             document.getElementById('loader').classList.remove('active');
         }
 
+        function showStatus(message, type = 'info') {
+            const statusElement = document.getElementById('status-message');
+            statusElement.innerHTML = `<div class="${type}">${message}</div>`;
+            statusElement.style.display = 'block';
+            
+            // Auto-hide after 5 seconds for info messages
+            if (type === 'info') {
+                setTimeout(() => {
+                    statusElement.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        function clearStatus() {
+            document.getElementById('status-message').style.display = 'none';
+        }
+
         function interpretCommand() {
             const userInput = document.getElementById('command-input').value;
             
             if (!userInput) {
-                alert("Please enter a command");
+                showStatus("Please enter a command", "error");
                 return;
             }
             
+            clearStatus();
             showLoader("Interpreting your command...");
             
-            fetch('/execute', {
+            fetch('/interpret', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -339,16 +427,16 @@
             })
             .then(response => {
                 if (!response.ok) {
-                    throw new Error('Error executing command');
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 return response.json();
             })
             .then(data => {
                 hideLoader();
+                console.log('Received data:', data);
                 
-                // Store the command and result for confirmation
+                // Store the interpreted command and notes for confirmation
                 window.pendingCommand = data.interpreted_command;
-                window.pendingResult = data.result;
                 window.pendingNotes = data.notes;
                 
                 // Show confirmation dialog with animation
@@ -358,7 +446,8 @@
             })
             .catch(error => {
                 hideLoader();
-                alert(error.message);
+                console.error('Error in interpretCommand:', error);
+                showStatus(`Error: ${error.message}`, "error");
             });
         }
 
@@ -368,14 +457,24 @@
             
             if (confirmed && window.pendingCommand) {
                 showLoader("Executing command...");
-                
-                setTimeout(() => {
+                fetch('/execute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({command: window.pendingCommand}),
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Error executing command');
+                    }
+                    return response.json();
+                })
+                .then(data => {
                     hideLoader();
-                    
                     // Show the results with animations
                     document.getElementById('result-container').classList.remove('hidden');
-                    document.getElementById('interpreted-command').textContent = window.pendingCommand;
-                    
+                    document.getElementById('interpreted-command').textContent = data.interpreted_command;
                     // Handle notes section
                     if (window.pendingNotes && window.pendingNotes.trim()) {
                         document.getElementById('notes-section').classList.remove('hidden');
@@ -383,24 +482,20 @@
                     } else {
                         document.getElementById('notes-section').classList.add('hidden');
                     }
-                    
                     let resultText = '';
-                    if (typeof window.pendingResult === 'object') {
-                        resultText = window.pendingResult.stdout || '';
-                        if (window.pendingResult.stderr) {
-                            resultText += '\nErrors:\n' + window.pendingResult.stderr;
+                    if (typeof data.result === 'object') {
+                        resultText = data.result.stdout || '';
+                        if (data.result.stderr) {
+                            resultText += '\nErrors:\n' + data.result.stderr;
                         }
                     } else {
-                        resultText = window.pendingResult;
+                        resultText = data.result;
                     }
-                    
                     // Animate the result text character by character
                     const resultElement = document.getElementById('command-result');
                     resultElement.textContent = '';
-                    
                     // Animate elements sequentially
                     animateElementsSequentially('#result-container .fade-in-sequence');
-                    
                     // Type out the result text
                     if (resultText.length > 500) {
                         // For long results, just show it all at once with fade in
@@ -422,7 +517,12 @@
                         };
                         setTimeout(typeResult, 500);
                     }
-                }, 800);
+                })
+                .catch(error => {
+                    hideLoader();
+                    console.error('Error:', error);
+                    showStatus(`Error executing command: ${error.message}`, "error");
+                });
             }
         }
 
