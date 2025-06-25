@@ -1,6 +1,10 @@
 import os
 import sys
 from flask import Flask, request, render_template, jsonify
+from flask_socketio import SocketIO, emit
+import threading
+import subprocess
+import signal
 
 # Import our custom modules
 from distro_detector import get_distro_info
@@ -9,6 +13,7 @@ from ollama_interface import interpret_command
 from user_info import get_user_info
 
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Get distribution and user info at startup
 DISTRO_INFO = get_distro_info()
@@ -16,6 +21,9 @@ USER_INFO = get_user_info()
 
 print(f"Detected system distribution:\n{DISTRO_INFO}")
 print(f"User information:\n{USER_INFO}")
+
+# Track running processes per session
+running_processes = {}
 
 @app.route('/')
 def index():
@@ -46,19 +54,71 @@ def interpret():
             'notes': f"An error occurred: {str(e)}"
         }), 400
 
-@app.route('/execute', methods=['POST'])
-def execute():
-    shell_command = request.json.get('command', '')
-    print(f"User input (execute): {shell_command}")
-    # Check if command is safe and execute
+# Remove the old /execute route
+# Add SocketIO event for command execution
+@socketio.on('execute_command')
+def handle_execute_command(data):
+    shell_command = data.get('command', '')
+    model_name = data.get('model', 'deepseek-coder')
+    sid = request.sid
+    print(f"[WS] User input (execute): {shell_command} | Model: {model_name}")
     if not is_safe_command(shell_command):
-        result = "This command requires manual intervention for safety reasons."
-    else:
-        result = execute_command(shell_command, USER_INFO)
-    return jsonify({
-        'interpreted_command': shell_command,
-        'result': result
-    })
+        socketio.emit('command_output', {'line': 'This command requires manual intervention for safety reasons.'}, room=sid)
+        socketio.emit('command_complete', {}, room=sid)
+        return
+    def run_and_stream():
+        try:
+            # Change to user's home directory before executing
+            os.chdir(USER_INFO['home'])
+            env = os.environ.copy()
+            env['HOME'] = USER_INFO['home']
+            env['USER'] = USER_INFO['username']
+            # Start subprocess with pipes for interactive I/O
+            process = subprocess.Popen(
+                shell_command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.PIPE,
+                text=True,
+                env=env,
+                bufsize=1,
+                preexec_fn=os.setsid
+            )
+            running_processes[sid] = process
+            def send_line(line):
+                socketio.emit('command_output', {'line': line}, room=sid)
+            for line in iter(process.stdout.readline, ''):
+                if line:
+                    send_line(line.rstrip('\n'))
+            process.stdout.close()
+            process.wait()
+            socketio.emit('command_complete', {'returncode': process.returncode}, room=sid)
+        except Exception as e:
+            socketio.emit('command_output', {'line': f'Error: {str(e)}'}, room=sid)
+            socketio.emit('command_complete', {}, room=sid)
+        finally:
+            running_processes.pop(sid, None)
+    thread = threading.Thread(target=run_and_stream)
+    thread.start()
+
+@socketio.on('stop_command')
+def handle_stop_command():
+    sid = request.sid
+    process = running_processes.get(sid)
+    if process and process.poll() is None:
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        except Exception as e:
+            print(f"Error killing process group: {e}")
+        socketio.emit('command_output', {'line': '[Process terminated by user]'}, room=sid)
+        socketio.emit('command_complete', {'returncode': -1}, room=sid)
+        running_processes.pop(sid, None)
+
+@socketio.on('send_input')
+def handle_send_input(data):
+    # This is a placeholder for interactive input support. To fully support interactive commands, you would need to keep track of the process and write to its stdin.
+    pass
 
 def test_cli_mode():
     """Simple CLI mode for testing without web interface"""
@@ -117,5 +177,5 @@ if __name__ == '__main__':
         test_cli_mode()
     else:
         print("Starting web interface on http://127.0.0.1:5000")
-        app.run(debug=True)
+        socketio.run(app, debug=True)
 

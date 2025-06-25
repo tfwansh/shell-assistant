@@ -282,13 +282,18 @@
 <body>
     <h1>Command Assistant</h1>
 
-    <div class="card">
+    <div class="card" style="position:relative;">
         <div class="section-title">Enter your command</div>
         <div class="input-area">
             <input type="text" id="command-input" placeholder="Enter your command in natural language...">
             <button onclick="interpretCommand()">Execute</button>
         </div>
         <div id="status-message"></div>
+        <div id="model-select-container" style="position:absolute; bottom:12px; right:18px; z-index:2;">
+            <select id="model-select" title="Ollama Model" style="font-size:12px; background:#232634; color:#b4befe; border:none; border-radius:6px; padding:3px 8px; outline:none; opacity:0.85;">
+            </select>
+            <span id="model-indicator" style="font-size:11px; color:#9399b2; margin-left:6px;"></span>
+        </div>
     </div>
 
     <div id="confirmation-dialog" class="hidden card bounce-in">
@@ -302,19 +307,28 @@
     </div>
 
     <div id="result-container" class="card hidden">
+        <div id="command-controls"></div>
         <div class="section fade-in-sequence">
             <div class="section-title">Interpreted Command</div>
             <div id="interpreted-command" class="command"></div>
         </div>
-
         <div class="section fade-in-sequence" id="notes-section">
             <div class="section-title">Notes</div>
             <div id="command-notes" class="notes"></div>
         </div>
-
         <div class="section fade-in-sequence">
             <div class="section-title">Result</div>
-            <pre id="command-result"></pre>
+            <div style="position:relative;">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                    <label for="line-count-select" style="font-size:13px; color:#b4befe;">Show:</label>
+                    <select id="line-count-select" style="font-size:13px; background:#232634; color:#b4befe; border:none; border-radius:6px; padding:2px 8px; outline:none; opacity:0.85;">
+                    </select>
+                    <button id="reveal-all-btn" style="font-size:13px; display:none;">Reveal All</button>
+                    <button id="stop-btn" style="font-size:13px; display:none; background:#f38ba8; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-weight:600; cursor:pointer;">Stop</button>
+                </div>
+                <pre id="command-result" style="max-height:350px; overflow:auto; background:#232634;"></pre>
+                <div id="result-bar" style="display:none; text-align:center; background:#181825; color:#b4befe; padding:4px 0; cursor:pointer; font-size:13px; border-radius:0 0 8px 8px;">... Output truncated ...</div>
+            </div>
         </div>
     </div>
 
@@ -323,8 +337,139 @@
         <div class="loader"></div>
         <div class="loader-text" id="loader-text">Processing command...</div>
     </div>
+    <div id="command-controls" style="display:none; margin-bottom:10px; align-items:center; gap:10px;">
+        <span id="mini-loader" style="display:none;">
+            <span class="loader" style="width:24px;height:24px;border-width:3px;"></span>
+            <span style="margin-left:8px;">Executing...</span>
+        </span>
+        <button id="stop-btn" onclick="stopCommand()" style="display:none; background:#f38ba8; color:#fff; border:none; border-radius:6px; padding:6px 14px; font-weight:600; cursor:pointer;">Stop</button>
+    </div>
 
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script>
+        let socket = null;
+        let processActive = false;
+        let inputCallback = null;
+
+        // --- Output line management ---
+        let allResultLines = [];
+        let showLines = 100;
+        let revealAll = false;
+        function updateResultDisplay() {
+            const resultElement = document.getElementById('command-result');
+            const resultBar = document.getElementById('result-bar');
+            const revealBtn = document.getElementById('reveal-all-btn');
+            let linesToShow = allResultLines;
+            if (!revealAll && showLines !== 'all' && allResultLines.length > showLines) {
+                linesToShow = allResultLines.slice(0, showLines);
+                resultBar.style.display = '';
+                revealBtn.style.display = '';
+            } else {
+                resultBar.style.display = 'none';
+                revealBtn.style.display = 'none';
+            }
+            resultElement.textContent = linesToShow.join('\n');
+        }
+        document.getElementById('line-count-select').addEventListener('change', function() {
+            showLines = this.value === 'all' ? 'all' : parseInt(this.value);
+            revealAll = false;
+            updateResultDisplay();
+        });
+        document.getElementById('reveal-all-btn').addEventListener('click', function() {
+            revealAll = true;
+            updateResultDisplay();
+        });
+        document.getElementById('result-bar').addEventListener('click', function() {
+            revealAll = true;
+            updateResultDisplay();
+        });
+
+        function setupSocket() {
+            if (socket) return;
+            socket = io();
+            socket.on('connect', () => {
+                console.log('Socket connected');
+            });
+            socket.on('command_output', (data) => {
+                if (data.line !== undefined) {
+                    allResultLines.push(data.line);
+                    updateResultDisplay();
+                    const resultElement = document.getElementById('command-result');
+                    resultElement.scrollTop = resultElement.scrollHeight;
+                }
+            });
+            socket.on('command_complete', (data) => {
+                processActive = false;
+                hideLoader();
+                if (data && typeof data.returncode !== 'undefined') {
+                    allResultLines.push(`[Process exited with code ${data.returncode}]`);
+                    updateResultDisplay();
+                }
+            });
+            // Placeholder for interactive input
+            socket.on('input_request', (data) => {
+                showInputBox(data.prompt || 'Input required:');
+            });
+        }
+
+        function showInputBox(prompt) {
+            let inputBox = document.getElementById('interactive-input-box');
+            if (!inputBox) {
+                inputBox = document.createElement('div');
+                inputBox.id = 'interactive-input-box';
+                inputBox.innerHTML = `
+                    <div style="margin-top:10px;">
+                        <span id="input-prompt">${prompt}</span>
+                        <input id="input-field" type="text" style="margin-left:10px;" autofocus />
+                        <button onclick="sendInteractiveInput()">Send</button>
+                    </div>
+                `;
+                document.getElementById('result-container').appendChild(inputBox);
+            } else {
+                document.getElementById('input-prompt').textContent = prompt;
+                document.getElementById('input-field').value = '';
+                inputBox.style.display = '';
+            }
+            document.getElementById('input-field').focus();
+        }
+
+        function hideInputBox() {
+            const inputBox = document.getElementById('interactive-input-box');
+            if (inputBox) inputBox.style.display = 'none';
+        }
+
+        function sendInteractiveInput() {
+            const value = document.getElementById('input-field').value;
+            if (socket && value !== undefined) {
+                socket.emit('send_input', {input: value});
+            }
+            hideInputBox();
+        }
+
+        function confirmExecution(confirmed) {
+            document.getElementById('confirmation-dialog').classList.add('hidden');
+            if (confirmed && window.pendingCommand) {
+                showLoader("Executing command...");
+                setupSocket();
+                document.getElementById('result-container').classList.remove('hidden');
+                document.getElementById('interpreted-command').textContent = window.pendingCommand;
+                if (window.pendingNotes && window.pendingNotes.trim()) {
+                    document.getElementById('notes-section').classList.remove('hidden');
+                    document.getElementById('command-notes').textContent = window.pendingNotes;
+                } else {
+                    document.getElementById('notes-section').classList.add('hidden');
+                }
+                allResultLines = [];
+                revealAll = false;
+                showLines = parseInt(document.getElementById('line-count-select').value) || 100;
+                updateResultDisplay();
+                processActive = true;
+                const modelName = document.getElementById('model-select').value;
+                console.log('Executing with model:', modelName);
+                socket.emit('execute_command', {command: window.pendingCommand, model: modelName});
+            }
+        }
+
         // Show animated elements sequentially
         function animateElementsSequentially(parentSelector) {
             const elements = document.querySelectorAll(`${parentSelector} > *`);
@@ -379,15 +524,53 @@
                     console.log(`✓ Element '${id}' found`);
                 }
             });
+
+            // Populate model dropdown
+            const modelSelect = document.getElementById('model-select');
+            const modelIndicator = document.getElementById('model-indicator');
+            const availableModels = [
+                {name: 'deepseek-coder', label: 'DeepSeek Coder'},
+                {name: 'mistral:latest', label: 'Mistral'},
+                {name: 'dolphin3:8b', label: 'Dolphin 3'}
+            ];
+            modelSelect.innerHTML = '';
+            availableModels.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.name;
+                opt.textContent = m.label;
+                modelSelect.appendChild(opt);
+            });
+            modelSelect.value = 'deepseek-coder';
+            modelIndicator.textContent = `Model: ${modelSelect.options[modelSelect.selectedIndex].text}`;
+            modelSelect.addEventListener('change', function() {
+                modelIndicator.textContent = `Model: ${modelSelect.options[modelSelect.selectedIndex].text}`;
+                console.log('Selected model:', modelSelect.value);
+            });
+            // Populate line count selector
+            const lineCountSelect = document.getElementById('line-count-select');
+            lineCountSelect.innerHTML = '';
+            [10, 25, 50, 100, 'all'].forEach(val => {
+                const opt = document.createElement('option');
+                opt.value = val;
+                opt.textContent = val === 'all' ? 'All' : val;
+                if (val === 100) opt.selected = true;
+                lineCountSelect.appendChild(opt);
+            });
         });
 
         function showLoader(message = "Processing command...") {
             document.getElementById('loader-text').textContent = message;
-            document.getElementById('loader').classList.add('active');
+            if (message.includes('Executing')) {
+                document.getElementById('loader').classList.remove('active');
+                showStopButton();
+            } else {
+                document.getElementById('loader').classList.add('active');
+            }
         }
 
         function hideLoader() {
             document.getElementById('loader').classList.remove('active');
+            hideStopButton();
         }
 
         function showStatus(message, type = 'info') {
@@ -409,21 +592,19 @@
 
         function interpretCommand() {
             const userInput = document.getElementById('command-input').value;
-            
+            const modelName = document.getElementById('model-select').value;
             if (!userInput) {
                 showStatus("Please enter a command", "error");
                 return;
             }
-            
             clearStatus();
             showLoader("Interpreting your command...");
-            
             fetch('/interpret', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({command: userInput}),
+                body: JSON.stringify({command: userInput, model: modelName}),
             })
             .then(response => {
                 if (!response.ok) {
@@ -451,87 +632,34 @@
             });
         }
 
-        function confirmExecution(confirmed) {
-            // Hide confirmation dialog
-            document.getElementById('confirmation-dialog').classList.add('hidden');
-            
-            if (confirmed && window.pendingCommand) {
-                showLoader("Executing command...");
-                fetch('/execute', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({command: window.pendingCommand}),
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Error executing command');
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    hideLoader();
-                    // Show the results with animations
-                    document.getElementById('result-container').classList.remove('hidden');
-                    document.getElementById('interpreted-command').textContent = data.interpreted_command;
-                    // Handle notes section
-                    if (window.pendingNotes && window.pendingNotes.trim()) {
-                        document.getElementById('notes-section').classList.remove('hidden');
-                        document.getElementById('command-notes').textContent = window.pendingNotes;
-                    } else {
-                        document.getElementById('notes-section').classList.add('hidden');
-                    }
-                    let resultText = '';
-                    if (typeof data.result === 'object') {
-                        resultText = data.result.stdout || '';
-                        if (data.result.stderr) {
-                            resultText += '\nErrors:\n' + data.result.stderr;
-                        }
-                    } else {
-                        resultText = data.result;
-                    }
-                    // Animate the result text character by character
-                    const resultElement = document.getElementById('command-result');
-                    resultElement.textContent = '';
-                    // Animate elements sequentially
-                    animateElementsSequentially('#result-container .fade-in-sequence');
-                    // Type out the result text
-                    if (resultText.length > 500) {
-                        // For long results, just show it all at once with fade in
-                        resultElement.textContent = resultText;
-                        resultElement.style.opacity = 0;
-                        setTimeout(() => {
-                            resultElement.style.opacity = 1;
-                            resultElement.style.transition = 'opacity 0.5s';
-                        }, 100);
-                    } else {
-                        // For shorter results, type it out
-                        let i = 0;
-                        const typeResult = () => {
-                            if (i < resultText.length) {
-                                resultElement.textContent += resultText.charAt(i);
-                                i++;
-                                setTimeout(typeResult, 10);
-                            }
-                        };
-                        setTimeout(typeResult, 500);
-                    }
-                })
-                .catch(error => {
-                    hideLoader();
-                    console.error('Error:', error);
-                    showStatus(`Error executing command: ${error.message}`, "error");
-                });
-            }
-        }
-
         // Add event listener for Enter key in command input
         document.getElementById('command-input').addEventListener('keypress', function(event) {
             if (event.key === 'Enter') {
                 interpretCommand();
             }
         });
+
+        function showStopButton() {
+            const stopBtn = document.getElementById('stop-btn');
+            stopBtn.style.display = '';
+            stopBtn.disabled = false;
+        }
+        function hideStopButton() {
+            const stopBtn = document.getElementById('stop-btn');
+            stopBtn.style.display = 'none';
+            stopBtn.disabled = true;
+        }
+        function stopCommand() {
+            if (socket) {
+                socket.emit('stop_command', {});
+            }
+            const stopBtn = document.getElementById('stop-btn');
+            stopBtn.disabled = true;
+            stopBtn.textContent = 'Stopping...';
+            setTimeout(() => {
+                stopBtn.textContent = 'Stop';
+            }, 2000);
+        }
     </script>
 </body>
 </html>
